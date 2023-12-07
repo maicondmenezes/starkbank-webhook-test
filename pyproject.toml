@@ -1,0 +1,50 @@
+[tool.poetry]
+name = "starkbank-webhook-test"
+version = "0.1.0"
+description = ""
+authors = ["Maicon de Menezes <maicondmenezes@gmail.com>"]
+readme = "README.md"
+packages = [{include = "starkbank_webhook_test"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+starkbank = "^2.22.0"
+kami-logging = "^0.2.1"
+
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.27.1"
+pytest = "^7.4.3"
+pytest-cov = "^4.1.0"
+blue = "^0.9.1"
+isort = "^5.12.0"
+ipython = "^8.18.1"
+taskipy = "^1.12.2"
+pytest-sugar = "^0.9.7"
+
+
+[tool.poetry.group.doc.dependencies]
+mkdocs-material = "^9.5.0"
+mkdocs = "^1.5.3"
+mkdocstrings = "^0.24.0"
+mkdocstrings-python = "^1.7.5"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+pythonpath = "."
+addopts = "--doctest-modules"
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.taskipy.tasks]
+lint = "blue . && isort ."
+lint-check = "blue --check --diff . && isort --check --diff ."
+pre_test = "task lint"
+test = "pytest -s -x --cov=starkbank_webhook_test -vv"
+post_test = "coverage html"
+docs = "mkdocs serve"
