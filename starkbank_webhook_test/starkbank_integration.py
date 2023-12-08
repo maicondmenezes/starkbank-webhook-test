@@ -363,8 +363,9 @@ class StarkbankIntegration:
             )
 
             transfers = sb_transfer.create([transfer])
-
-            print(f'Transfer initiated. Transfer ID: {transfers[0].id}')
+            intregation_logger.info(
+                f'Transfer initiated. Transfer ID: {transfers[0].id} | Amount: {transfers[0].amount} | Recipient: {transfers[0].name}'
+            )
             return True
 
         except InvalidSignatureError as sig_error:
@@ -391,6 +392,9 @@ class StarkbankIntegration:
             invoice_log = event.log.invoice
 
             if invoice_log.status == 'paid':
+                intregation_logger.info(
+                    f'Paid Invoice. Invoice ID: {invoice_log.id}'
+                )
                 amount_to_transfer = invoice_log.amount - invoice_log.fee
                 self._create_transfer(amount_to_transfer)
 

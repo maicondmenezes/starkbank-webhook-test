@@ -1,22 +1,28 @@
 import json
 import logging
 import os
+import time
 from logging.handlers import TimedRotatingFileHandler
 
-from starkbank_webhook_test.constants import INPUT_DIR, OUTPUT_DIR
+from requests.exceptions import RequestException
+
+from starkbank_webhook_test.constants import INPUT_DIR, OUTPUT_DIR, PRIVATE_KEY_PATH
 from starkbank_webhook_test.starkbank_integration import (
+    Error,
+    InvalidSignatureError,
     StarkbankIntegration,
     StarkbankIntegrationError,
 )
 
 # Constants for file paths
 SETTINGS_FILE_PATH = os.path.join(
-    INPUT_DIR, 'settings/invoices_generator_setup.json'
+    INPUT_DIR, 'settings/transfer_generator_setup.json'
 )
-LOG_FILE_PATH = os.path.join(OUTPUT_DIR, 'logs/invoice_generator_service.log')
+LOG_FILE_PATH = os.path.join(OUTPUT_DIR, 'logs/transfer_generator_service.log')
 
-# Setting up logger and handler for the InvoiceGeneratorService class
-service_logger = logging.getLogger('InvoiceGeneratorService')
+
+# Setting up logger and handler for the TransferGeneratorService class
+service_logger = logging.getLogger('TransferGeneratorService')
 service_logger.setLevel(logging.DEBUG)
 
 handler = TimedRotatingFileHandler(
@@ -26,8 +32,7 @@ handler.setLevel(logging.DEBUG)
 service_logger.addHandler(handler)
 
 
-# Create a class for handling Invoice Generation
-class InvoiceGeneratorService:
+class TransferGeneratorService:
     @classmethod
     def create_engine(cls, settings_file_path: str, private_key_path: str):
         """
@@ -61,7 +66,7 @@ class InvoiceGeneratorService:
 
     def __init__(self, settings_file_path: str, private_key_path: str):
         """
-        Initialize InvoiceGeneratorService with StarkbankIntegration instance.
+        Initialize TransferGeneratorService with StarkbankIntegration instance.
 
         Args:
             - settings_file_path (str): Path to the configuration file.
@@ -80,18 +85,29 @@ class InvoiceGeneratorService:
 
     def run(self):
         """
-        Run the invoice generation process using StarkbankIntegration instance.
+        Run the transfer generator service using StarkbankIntegration instance.
         """
         try:
             # Connect to Stark Bank API for authentication
             self.engine.connect()
 
-            # Run the invoice generation process
-            self.engine.issue_random_invoices(self.params)
+            start_time = time.time()
+            end_time = start_time + self.params['duration_time']
+
+            while time.time() < end_time:
+                # Listen to webhook events
+                events_response = self.engine.listen_webhook_events()
+                print(events_response.json())
+
+                # Process webhook events
+                self.engine.process_webhook_events(events_response)
+
+                # Wait for the next batch
+                time.sleep(self.params['repetition_time'])
 
         except StarkbankIntegrationError as e:
-            # Log any exception that occurs during invoice generation
-            service_logger.error(f'Invoice generation error: {e}')
+            # Log any exception that occurs during webhook listening
+            service_logger.error(f'Transfer Handler error: {e}')
         finally:
             # Close the logger handler to flush any buffered logs
             for handler in service_logger.handlers:
