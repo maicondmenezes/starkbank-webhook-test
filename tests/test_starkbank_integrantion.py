@@ -1,6 +1,7 @@
 import unittest
-from time import sleep
 from unittest.mock import Mock, patch
+
+import starkbank
 
 from starkbank_webhook_test.auth.authenticator import Authenticator
 from starkbank_webhook_test.starkbank_integration import (
@@ -245,6 +246,107 @@ class TestStarkbankIntegration(unittest.TestCase):
 
         # Check if _issue_single_invoice was called 5 times
         assert mock_issue_single_invoice.call_count == 5
+
+    @patch('starkbank_webhook_test.starkbank_integration.requests')
+    def test_listen_webhook_events_success(self, mock_requests):
+        # Mock the requests.get method
+        mock_response = Mock()
+        mock_response.data = b'{"subscription": "invoice"}'
+        mock_response.headers = {'Digital-Signature': 'valid_signature'}
+        mock_requests.get.return_value = mock_response
+
+        integration = StarkbankIntegration(
+            environment='sandbox',
+            id='1234567890',
+            private_key='valid_private_key_content',
+            auth_type='project',
+            webhook_url='http://example.com/webhook',
+        )
+
+        # Call the method
+        response = integration.listen_webhook_events()
+
+        # Check if the method returned the expected result
+        self.assertEqual(response, mock_response)
+
+        # Check if requests.get was called with the correct URL
+        mock_requests.get.assert_called_with('http://example.com/webhook')
+
+    @patch('requests.get', side_effect=Exception('Request error'))
+    def test_listen_webhook_events_failure(self, mock_requests):
+        # Mock the requests.get method to simulate a request exception
+        mock_requests.get.side_effect = Exception('Request error')
+
+        integration = StarkbankIntegration(
+            environment='sandbox',
+            id='1234567890',
+            private_key='valid_private_key_content',
+            auth_type='project',
+            webhook_url='http://example.com/webhook',
+        )
+
+        # Call the method and check for the expected exception
+        with self.assertRaises(StarkbankIntegrationError) as context:
+            integration.listen_webhook_events()
+        self.assertTrue(
+            str(context.exception).startswith(
+                'Error when try to listen webhook'
+            )
+        )
+
+    @patch('starkbank.event')
+    @patch(
+        'starkbank_webhook_test.starkbank_integration.StarkbankIntegration._process_invoice_credit'
+    )
+    def test_process_webhook_events_success(
+        self, mock_process_invoice_credit, mock_event
+    ):
+        # Mock the event.parse method
+        mock_event_instance = Mock(subscription='invoice')
+        mock_event.parse.return_value = mock_event_instance
+
+        # Create a mock response object
+        mock_response = Mock()
+        mock_response.data.decode.return_value = 'mock_response_data'
+        mock_response.headers = {'Digital-Signature': 'mock_signature'}
+
+        # Call the method with the mock response
+        integration = StarkbankIntegration(
+            environment='sandbox',
+            id='1234567890',
+            private_key='valid_private_key_content',
+            auth_type='project',
+            webhook_url='http://example.com/webhook',
+        )
+        with patch.object(starkbank, 'event', mock_event):
+            integration.process_webhook_events(mock_response)
+
+        # Check if _process_invoice_credit method was called
+        mock_process_invoice_credit.assert_called_with(mock_event_instance)
+
+    @patch('starkbank.Event')
+    def test_process_webhook_events_failure(self, mock_event):
+        # Mock the Event.parse method to simulate an invalid signature error
+        mock_event.parse.side_effect = StarkbankIntegrationError(
+            'Invalid signature error'
+        )
+
+        integration = StarkbankIntegration(
+            environment='sandbox',
+            id='1234567890',
+            private_key='valid_private_key_content',
+            auth_type='project',
+            webhook_url='http://example.com/webhook',
+        )
+
+        # Call the method and check for the expected exception
+        with self.assertRaises(StarkbankIntegrationError) as context:
+            integration.process_webhook_events(Mock())
+        self.assertTrue(
+            str(context.exception).startswith(
+                'Error processing webhook events'
+            )
+        )
 
 
 if __name__ == '__main__':

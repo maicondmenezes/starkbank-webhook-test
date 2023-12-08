@@ -3,9 +3,12 @@ from datetime import datetime, timedelta
 from random import randint, sample, uniform
 from urllib.parse import urlparse
 
+import requests
+import starkbank
+import starkbank.transfer as sb_transfer
 from faker import Faker
-from starkbank import Invoice
-from starkbank.transfer import Rule
+from starkbank import Invoice, Transfer
+from starkbank.error import Error, InvalidSignatureError
 
 from starkbank_webhook_test.auth.authenticator import AuthenticationError, Authenticator
 
@@ -267,7 +270,7 @@ class StarkbankIntegration:
                 if rule_key == 'allowedTaxIds'
                 else fake.random_int(1, 10)
             )
-            rule = Rule(key=rule_key, value=rule_value)
+            rule = sb_transfer.Rule(key=rule_key, value=rule_value)
             rules.append(rule)
         return rules
 
@@ -318,6 +321,129 @@ class StarkbankIntegration:
                 f'Error issuing a single random invoice: {e}'
             )
 
+    def _create_transfer(self, amount_to_transfer):
+        """
+        Create a single transfer with the specified amount.
+
+        Args:
+            amount_to_transfer (int): The amount to transfer.
+
+        Returns:
+            bool: True if the transfer is successful, False otherwise.
+        """
+        try:
+            transfer = Transfer(
+                amount=amount_to_transfer,
+                bank_code='20018183',
+                branch_code='0001',
+                account_number='6341320293482496',
+                account_type='payment',
+                tax_id='20.018.183/0001-80',
+                name='Stark Bank S.A.',
+            )
+
+            transfers = sb_transfer.create([transfer])
+
+            print(f'Transfer initiated. Transfer ID: {transfers[0].id}')
+            return True
+
+        except InvalidSignatureError as sig_error:
+            raise StarkbankIntegrationError(
+                f'Invalid signature error: {sig_error}'
+            )
+
+        except Error as sb_error:
+            raise StarkbankIntegrationError(
+                f'StarkBank error creating transfer: {sb_error}'
+            )
+
+        except Exception as e:
+            raise StarkbankIntegrationError(f'Error creating transfer: {e}')
+
+    def _process_invoice_credit(self, event):
+        """
+        Process the webhook callback of the Invoice credit and initiate a transfer if conditions are met.
+
+        Args:
+            event (starkbank.Event): The event related to the Invoice credit.
+        """
+        try:
+            invoice_log = event.log.invoice
+
+            if invoice_log.status == 'paid':
+                amount_to_transfer = invoice_log.amount - invoice_log.fee
+                self._create_transfer(amount_to_transfer)
+
+        except Error as sb_error:
+            raise StarkbankIntegrationError(
+                f'StarkBank error processing Invoice credit webhook: {sb_error}'
+            )
+
+        except Exception as e:
+            raise StarkbankIntegrationError(
+                f'Error processing Invoice credit webhook: {e}'
+            )
+
+    def listen_webhook_events(self):
+        """
+        Public method to listen to the webhook events.
+
+        Returns:
+            Response: The response containing the webhook events.
+
+        Raises:
+            StarkbankIntegrationError: If an error occurs during webhook listening.
+        """
+        try:
+            response = requests.get(self.webhook)
+            response.raise_for_status()
+
+            return response
+
+        except requests.exceptions.RequestException as req_error:
+            raise StarkbankIntegrationError(
+                f'Error making a request to the webhook URL: {req_error}'
+            )
+
+        except Exception as e:
+            raise StarkbankIntegrationError(
+                f'Error when try to listen webhook: {e}'
+            )
+
+    def process_webhook_events(self, events_response):
+        """
+        Process the webhook events received in the response.
+
+        Args:
+            events_response (Response): The response containing the events.
+
+        Raises:
+            StarkbankIntegrationError: If an error occurs during event processing.
+        """
+        try:
+            response_data = events_response.data.decode('utf-8')
+            signature = events_response.headers['Digital-Signature']
+            event = starkbank.event.parse(
+                content=response_data, signature=signature
+            )
+
+            if event.subscription == 'invoice':
+                self._process_invoice_credit(event)
+
+        except InvalidSignatureError as sig_error:
+            raise StarkbankIntegrationError(
+                f'Invalid signature error: {sig_error}'
+            )
+
+        except Error as sb_error:
+            raise StarkbankIntegrationError(
+                f'StarkBank error processing webhook events: {sb_error}'
+            )
+
+        except Exception as e:
+            raise StarkbankIntegrationError(
+                f'Error processing webhook events {e}'
+            )
 
 class StarkbankIntegrationError(Exception):
     """Custom exception for StarkbankIntegration errors."""
