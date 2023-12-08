@@ -1,4 +1,5 @@
 import unittest
+from time import sleep
 from unittest.mock import Mock, patch
 
 from starkbank_webhook_test.auth.authenticator import Authenticator
@@ -128,6 +129,122 @@ class TestStarkbankIntegration(unittest.TestCase):
         with self.assertRaises(StarkbankIntegrationError) as context:
             integration.connect()
         self.assertEqual(str(context.exception), 'Authentication failed')
+
+    @patch(
+        'starkbank_webhook_test.starkbank_integration.StarkbankIntegration._generate_random_invoice_data',
+        autospec=True,
+    )
+    def test_generate_random_invoice_data_success(self, mock_generate_data):
+        # Mock data returned by _generate_random_invoice_data
+        mock_invoice_data = {
+            'amount': 5000,
+            'taxId': '123.456.789-09',
+            'name': 'John Doe',
+        }
+        mock_generate_data.return_value = mock_invoice_data
+
+        integration = StarkbankIntegration(
+            environment=self.valid_environment,
+            id=self.valid_id,
+            private_key=self.valid_private_key,
+            auth_type=self.valid_auth_type,
+            webhook_url=self.valid_webhook_url,
+        )
+        # Call the method
+        result = integration._generate_random_invoice_data()
+
+        # Check if the method returned the expected result
+        self.assertEqual(result, mock_invoice_data)
+
+    @patch(
+        'starkbank_webhook_test.starkbank_integration.StarkbankIntegration._generate_random_invoice_data',
+        autospec=True,
+        side_effect=StarkbankIntegrationError('Generate data error'),
+    )
+    def test_generate_random_invoice_data_failure(self, mock_generate_data):
+
+        integration = StarkbankIntegration(
+            environment=self.valid_environment,
+            id=self.valid_id,
+            private_key=self.valid_private_key,
+            auth_type=self.valid_auth_type,
+            webhook_url=self.valid_webhook_url,
+        )
+        with self.assertRaises(StarkbankIntegrationError) as context:
+            integration._generate_random_invoice_data()
+        self.assertEqual(str(context.exception), 'Generate data error')
+
+    @patch(
+        'starkbank_webhook_test.starkbank_integration.StarkbankIntegration._issue_single_invoice',
+        autospec=True,
+    )
+    def test_issue_single_invoice_success(self, mock_issue_single_invoice):
+        # Mock data returned by _issue_single_invoice
+        mock_invoice = Mock()
+        mock_issue_single_invoice.return_value = mock_invoice
+
+        integration = StarkbankIntegration(
+            environment=self.valid_environment,
+            id=self.valid_id,
+            private_key=self.valid_private_key,
+            auth_type=self.valid_auth_type,
+            webhook_url=self.valid_webhook_url,
+        )
+
+        # Call the method
+        result = integration._issue_single_invoice()
+
+        # Check if the method returned the expected result
+        self.assertEqual(result, mock_invoice)
+
+    @patch(
+        'starkbank_webhook_test.starkbank_integration.StarkbankIntegration._issue_single_invoice',
+        autospec=True,
+        side_effect=StarkbankIntegrationError('Issue single invoice error'),
+    )
+    def test_issue_single_invoice_failure(self, mock_issue_single_invoice):
+
+        integration = StarkbankIntegration(
+            environment=self.valid_environment,
+            id=self.valid_id,
+            private_key=self.valid_private_key,
+            auth_type=self.valid_auth_type,
+            webhook_url=self.valid_webhook_url,
+        )
+
+        with patch('time.sleep', side_effect=lambda _: None):
+            with self.assertRaises(StarkbankIntegrationError) as context:
+                integration._issue_single_invoice()
+        self.assertEqual(str(context.exception), 'Issue single invoice error')
+
+    @patch(
+        'starkbank_webhook_test.starkbank_integration.StarkbankIntegration._issue_single_invoice',
+        autospec=True,
+    )
+    @patch(
+        'time.sleep',
+        side_effect=lambda _: None,
+    )
+    def test_issue_invoices_success(
+        self, mock_sleep, mock_issue_single_invoice
+    ):
+        # Mock _issue_single_invoice
+        mock_issue_single_invoice.return_value = Mock()
+
+        integration = StarkbankIntegration(
+            environment=self.valid_environment,
+            id=self.valid_id,
+            private_key=self.valid_private_key,
+            auth_type=self.valid_auth_type,
+            webhook_url=self.valid_webhook_url,
+        )
+
+        # Call the method
+        with patch('time.sleep', side_effect=lambda _: None):
+            integration._issue_invoices(5, 60)
+
+        # Check if _issue_single_invoice was called 5 times
+        assert mock_issue_single_invoice.call_count == 5
 
 
 if __name__ == '__main__':
