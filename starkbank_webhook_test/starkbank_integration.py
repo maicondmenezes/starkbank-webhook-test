@@ -1,3 +1,4 @@
+import logging
 import time
 from datetime import datetime, timedelta
 from random import randint, sample, uniform
@@ -7,10 +8,14 @@ import requests
 import starkbank
 import starkbank.transfer as sb_transfer
 from faker import Faker
+from kami_logging import benchmark_with, logging_with
 from starkbank import Invoice, Transfer
 from starkbank.error import Error, InvalidSignatureError
 
 from starkbank_webhook_test.auth.authenticator import AuthenticationError, Authenticator
+
+intregation_logger = logging.getLogger('starkbank_integration')
+intregation_logger.setLevel(logging.DEBUG)
 
 
 class StarkbankIntegration:
@@ -70,6 +75,8 @@ class StarkbankIntegration:
                 'Invalid webhook_url. Please provide a valid URL.'
             )
 
+    @logging_with(intregation_logger)
+    @benchmark_with(intregation_logger)
     def connect(self):
         """
         Connect to Stark Bank API using the authenticator and set the user attribute.
@@ -97,6 +104,8 @@ class StarkbankIntegration:
         duration_time = params.get('duration_time', 24)
         return quantity_interval, repetition_time, duration_time
 
+    @logging_with(intregation_logger)
+    @benchmark_with(intregation_logger)
     def issue_random_invoices(self, params):
         """
         Generate a random number of invoices within the specified quantity interval,
@@ -120,6 +129,7 @@ class StarkbankIntegration:
 
         while datetime.utcnow() < end_time:
             num_invoices = randint(*quantity_interval)
+            intregation_logger.info(f'Issuing {num_invoices} random invoices.')
             self._issue_invoices(num_invoices, repetition_time)
             time.sleep(repetition_time)
 
@@ -134,7 +144,13 @@ class StarkbankIntegration:
         time_interval = repetition_time / num_invoices
 
         for _ in range(num_invoices):
-            self._issue_single_invoice()
+            try:
+                invoice = self._issue_single_invoice()
+                intregation_logger.info(
+                    f'Invoice issued. Invoice ID: {invoice[0].id}'
+                )
+            except StarkbankIntegrationError as sie:
+                intregation_logger.error(f'Invoice issue Error:{sie}')
             time.sleep(time_interval)
 
     def _generate_random_invoice_data(
@@ -149,7 +165,7 @@ class StarkbankIntegration:
         Generate random data for an invoice.
         """
         try:
-            fake = Faker()
+            fake = Faker('pt_BR')
             required_fields = ['amount', 'taxId', 'name']
             optional_fields = [
                 'due',
@@ -310,11 +326,15 @@ class StarkbankIntegration:
                 if invoice_data.get(key)
             }
 
-            return Invoice(
-                amount=invoice_data.get('amount'),
-                tax_id=invoice_data.get('taxId'),
-                name=invoice_data.get('name'),
-                **optional_data,
+            return starkbank.invoice.create(
+                [
+                    Invoice(
+                        amount=invoice_data.get('amount'),
+                        tax_id=invoice_data.get('taxId'),
+                        name=invoice_data.get('name'),
+                        **optional_data,
+                    )
+                ]
             )
         except Exception as e:
             raise StarkbankIntegrationError(
@@ -384,6 +404,8 @@ class StarkbankIntegration:
                 f'Error processing Invoice credit webhook: {e}'
             )
 
+    @logging_with(intregation_logger)
+    @benchmark_with(intregation_logger)
     def listen_webhook_events(self):
         """
         Public method to listen to the webhook events.
@@ -410,6 +432,8 @@ class StarkbankIntegration:
                 f'Error when try to listen webhook: {e}'
             )
 
+    @logging_with(intregation_logger)
+    @benchmark_with(intregation_logger)
     def process_webhook_events(self, events_response):
         """
         Process the webhook events received in the response.
@@ -444,6 +468,7 @@ class StarkbankIntegration:
             raise StarkbankIntegrationError(
                 f'Error processing webhook events {e}'
             )
+
 
 class StarkbankIntegrationError(Exception):
     """Custom exception for StarkbankIntegration errors."""
