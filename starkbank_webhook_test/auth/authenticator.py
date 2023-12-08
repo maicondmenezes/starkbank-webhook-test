@@ -1,6 +1,7 @@
 import os
 
 import starkbank
+from starkbank.error import InputErrors, InternalServerError, InvalidSignatureError
 
 
 class Authenticator:
@@ -78,13 +79,13 @@ class Authenticator:
             starkbank.user = user
             return user
 
-        except starkbank.error.InvalidSignatureError as e:
+        except InvalidSignatureError as e:
             raise AuthenticationError(f'Invalid signature: {e}')
 
-        except starkbank.error.InputErrors as e:
+        except InputErrors as e:
             raise AuthenticationError(f'Input errors: {e}')
 
-        except starkbank.error.InternalServerError as e:
+        except InternalServerError as e:
             raise AuthenticationError(f'Internal server error: {e}')
 
         except Exception as e:
@@ -108,7 +109,7 @@ class Authenticator:
             private_key, public_key = starkbank.key.create(destination_path)
             return private_key, public_key
 
-        except starkbank.error.InternalServerError as e:
+        except InternalServerError as e:
             raise AuthenticationError(
                 f'Internal server error during key creation: {e}'
             )
